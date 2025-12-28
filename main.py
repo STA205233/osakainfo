@@ -4,6 +4,9 @@ import os
 from screenshot import make_screenshot
 import time
 import mysqlIO
+import CallbackDeque
+import logging
+import logging.handlers
 
 
 def fetch_latest_ups_data(connector):
@@ -33,23 +36,55 @@ def make_screenshot_and_push_to_slack(slack_handler: SlackHandler.SlackHandler, 
 
 def main():
     channel = "#osaka-micrograms-info"
+
+    # logger setup
+    mysql_log = logging.getLogger("mysql")
+    slack_log = logging.getLogger("slack")
+    main_log = logging.getLogger("main")
+    handler = logging.handlers.RotatingFileHandler("osaka_micrograms_info_bot.log", maxBytes=5 * 1024 * 1024, backupCount=2)
+    handler.setLevel(logging.INFO)
+    handler_debug = logging.handlers.RotatingFileHandler("osaka_micrograms_debug_bot.log", maxBytes=5 * 1024 * 1024, backupCount=2)
+    handler_debug.setLevel(logging.DEBUG)
+    handler_terminal = logging.StreamHandler()
+    handler_terminal.setLevel(logging.INFO)
+    mysql_log.setLevel(logging.DEBUG)
+    slack_log.setLevel(logging.DEBUG)
+    main_log.setLevel(logging.DEBUG)
+    handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s [%(levelname)s]: %(message)s'))
+    handler_debug.setFormatter(logging.Formatter('%(asctime)s - %(name)s [%(levelname)s]: %(message)s'))
+    handler_terminal.setFormatter(logging.Formatter('%(asctime)s - %(name)s [%(levelname)s]: %(message)s'))
+    mysql_log.addHandler(handler)
+    mysql_log.addHandler(handler_debug)
+    mysql_log.addHandler(handler_terminal)
+    slack_log.addHandler(handler)
+    slack_log.addHandler(handler_debug)
+    slack_log.addHandler(handler_terminal)
+    main_log.addHandler(handler)
+    main_log.addHandler(handler_debug)
+    main_log.addHandler(handler_terminal)
+
     duration_img = 60 * 60 * 24  # 24 hours
-    duration_txt = 10 * 60  # 10 minutes
+    main_log.info("Starting Osaka MicroGRAMS Slack Info Bot")
+    duration_txt = 10 * 60   # 10 minutes
+    main_log.info(f"Text push duration set to {duration_txt} seconds")
+    main_log.info(f"Image push duration set to {duration_img} seconds")
     last_img_push_time = None
     last_txt_push_time = None
     init_ = True
     host = "192.168.10.99"
     user = os.environ['DB_USER']
     password = os.environ['DB_PASSWD']
+    main_log.info(f"host: {host}, user: {user}")
     last_ts = None
-    slack_handler = SlackHandler.SlackHandler(os.environ['SLACK_TOKEN'])
-    connector1 = mysqlIO.mysqlIO(host, user, password, "")
+    slack_handler = SlackHandler.SlackHandler(os.environ['SLACK_TOKEN'], logger=slack_log)
+    img_queue = CallbackDeque.CallbackDeque(maxlen=3, callback=lambda file_ids: [slack_handler.delete_img(file_id) for file_id in file_ids])
+    connector1 = mysqlIO.mysqlIO(host, user, password, "", logger=mysql_log)
     while True:
         current_time = datetime.datetime.now()
         if last_txt_push_time is not None and current_time - last_txt_push_time < datetime.timedelta(seconds=duration_txt):
             time.sleep(1)
             continue
-        text_title = f"Current Osaka MicroGRAMS Status ({time.strftime('%Y-%m-%d %H:%M:%S')})"
+        text_title = f"Current Osaka MicroGRAMS Status ({time.strftime('%Y-%m-%d %H:%M:%S')} JST)"
         try:
             blocks = []
             block = {"type": "header", "text": {"type": "plain_text", "text": text_title}}
@@ -80,20 +115,25 @@ def main():
                 last_ts = response["ts"]
                 channel = response["channel"]
                 result = make_screenshot_and_push_to_slack(slack_handler, channel, thread_ts=last_ts)
+                if result["ok"]:
+                    file_ids = [file["id"] for file in result["files"]]
+                    img_queue.append(file_ids, call_callback=True)
                 last_img_push_time = current_time
                 last_txt_push_time = last_img_push_time
             else:
                 slack_handler.edit_message_block(channel, last_ts, blocks, text)
                 last_txt_push_time = current_time
                 if (current_time - last_img_push_time).total_seconds() >= duration_img:
-                    make_screenshot_and_push_to_slack(slack_handler, channel, thread_ts=last_ts)
+                    result = make_screenshot_and_push_to_slack(slack_handler, channel, thread_ts=last_ts)
+                    if result["ok"]:
+                        file_ids = [file["id"] for file in result["files"]]
+                        img_queue.append(file_ids, call_callback=True)
                     last_img_push_time = current_time
-                    slack_handler.delete_last_uploaded_images()
         except KeyboardInterrupt:
             break
         except Exception as e:
             last_img_push_time = datetime.datetime.now()
-            print("Error occurred:", e)
+            main_log.error("Error occurred:", exc_info=e)
             time.sleep(60)  # wait for a minute before retrying
 
 
