@@ -1,3 +1,4 @@
+from time import sleep
 import mysql.connector
 import os
 
@@ -8,7 +9,8 @@ class mysqlIO:
             host=host,
             user=user,
             password=password,
-            database=database
+            database=database,
+            autocommit=True,
         )
         self.cursor = self.connection.cursor(dictionary=True)
         self.logger = logger
@@ -20,7 +22,8 @@ class mysqlIO:
 
     def query(self, query):
         self.cursor.execute(query)
-        return self.return_wrapper(self.cursor.fetchall())
+        ret = self.return_wrapper(self.cursor.fetchall())
+        return ret
 
     def close(self):
         self.cursor.close()
@@ -28,4 +31,9 @@ class mysqlIO:
 
 
 if __name__ == "__main__":
-    db = mysqlIO("192.168.10.99", os.environ['DB_USER'], os.environ['DB_PASSWORD'], "micrograms")
+    db = mysqlIO("192.168.160.106", os.environ['DB_USER'], os.environ['DB_PASSWD'], "Osaka_Dec_2025")
+    while True:
+        results = db.query("SELECT * FROM Osaka_Dec_2025.pressure ORDER BY time DESC LIMIT 1")
+        print(results)
+        import time
+        time.sleep(1)

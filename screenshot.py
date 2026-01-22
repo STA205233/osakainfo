@@ -19,7 +19,7 @@ def make_screenshot(output="grafana.png", url=None, password=None, user=None):
         page.fill('input[name="password"]', PASSWORD)
         page.click('button[type="submit"]')
         page.click("button[id=dock-menu-button]")
-        time.sleep(5)
+        time.sleep(10)
         page.evaluate(f"""
         () => {{
             const el = document.createElement('div');

@@ -10,12 +10,12 @@ import logging.handlers
 
 
 def fetch_latest_ups_data(connector):
-    result = connector.query("SELECT * FROM bench_test.Turbo_UPS ORDER BY time DESC LIMIT 1")
+    result = connector.query("SELECT * FROM bench_test.Turbo_UPS ORDER BY time DESC LIMIT 1;")
     return result[0]
 
 
 def fetch_latest_pressure_data(connector):
-    result = connector.query("SELECT * FROM Osaka_Dec_2025.pressure ORDER BY time DESC LIMIT 1")
+    result = connector.query("SELECT * FROM Osaka_Dec_2025.pressure ORDER BY time DESC LIMIT 1;")
     return result[0]
 
 
@@ -63,21 +63,22 @@ def main():
     main_log.addHandler(handler_debug)
     main_log.addHandler(handler_terminal)
 
-    duration_img = 60 * 60 * 24  # 24 hours
+    duration_img = 60 * 60 * 6  # 24 hours
     main_log.info("Starting Osaka MicroGRAMS Slack Info Bot")
     duration_txt = 10 * 60   # 10 minutes
     main_log.info(f"Text push duration set to {duration_txt} seconds")
     main_log.info(f"Image push duration set to {duration_img} seconds")
     last_img_push_time = None
     last_txt_push_time = None
+    delta_time = datetime.timedelta(hours=14)
     init_ = True
-    host = "192.168.10.99"
+    host = "192.168.160.106"
     user = os.environ['DB_USER']
     password = os.environ['DB_PASSWD']
     main_log.info(f"host: {host}, user: {user}")
     last_ts = None
     slack_handler = SlackHandler.SlackHandler(os.environ['SLACK_TOKEN'], logger=slack_log)
-    img_queue = CallbackDeque.CallbackDeque(maxlen=3, callback=lambda file_ids: [slack_handler.delete_img(file_id) for file_id in file_ids])
+    img_queue = CallbackDeque.CallbackDeque(maxlen=4, callback=lambda file_ids: [slack_handler.delete_img(file_id) for file_id in file_ids])
     connector1 = mysqlIO.mysqlIO(host, user, password, "", logger=mysql_log)
     while True:
         current_time = datetime.datetime.now()
@@ -91,16 +92,16 @@ def main():
             blocks.append(block)
             text = ""
             pressure_data = fetch_latest_pressure_data(connector1)
-            text += "_________________Pressure__________________"
+            text += f"_____Pressure({pressure_data['time'] + delta_time} JST)_____"
             text += "\nPressure 1: ".ljust(12) + f"{pressure_data['PR1']:.4e}".rjust(6) + " Torr, " + f"{convert2Pa(pressure_data['PR1']):.4e}".rjust(6) + " Pa"
             text += "\nPressure 2: ".ljust(12) + f"{pressure_data['PR2']:.4e}".rjust(6) + " Torr, " + f"{convert2Pa(pressure_data['PR2']):.4e}".rjust(6) + " Pa"
             text += "\nPressure 3: ".ljust(12) + f"{pressure_data['PR3']:.4e}".rjust(6) + " Torr, " + f"{convert2Pa(pressure_data['PR3']):.4e}".rjust(6) + " Pa"
             text += "\nPressure 4: ".ljust(12) + f"{pressure_data['PR4']:.4e}".rjust(6) + " Torr, " + f"{convert2Pa(pressure_data['PR4']):.4e}".rjust(6) + " Pa"
             text += "\nPressure 5: ".ljust(12) + f"{pressure_data['PR5']:.4e}".rjust(6) + " Torr, " + f"{convert2Pa(pressure_data['PR5']):.4e}".rjust(6) + " Pa"
-            text += "\n___________________________________________\n"
+            text += "\n___________________________________________\n"           
             ljust_value = 32
-            text += "\n___________________Turbo____________________"
             ups_data = fetch_latest_ups_data(connector1)
+            text += f"\n______Turbo({ups_data['time'] + delta_time} JST)______"
             text += "\nActual Turbo Rotation: ".ljust(ljust_value) + f"{ups_data["ActualSpd"]:5}" + " rpm"
             text += "\nTemperature Pump Bottom Part: ".ljust(ljust_value) + f"{ups_data["TempPmpBot"]:5}" + " °C"
             text += "\nTemperature Motor: ".ljust(ljust_value) + f"{ups_data["TempMotor"]:5}" + " °C"
